@@ -4,4 +4,4 @@ The purpose of this code is to compute some integral kernels on the sphere S^2 a
 * The kernel of the fractional Laplacian on the sphere.
 * The jump kernel of Levy processes subordinate to Browniand motion.
 
-An example of its usage, and the result of some comparison between these kernels can be seen in the Jupyter notebooks that are provided.
+An example of its usage, and the result of some comparison between these kernels can be seen in the Jupyter notebooks that are provided. In [this notebook](https://github.com/luissilvestre/collisionkernel/blob/main/fractional_laplacian_test.ipynb) we compare the collision kernel with the spherical fractional Laplacian. In [this notebook](https://github.com/luissilvestre/collisionkernel/blob/main/subordinate_test.ipynb) we compare the collision kernel with the kernel of a subordinate process.
