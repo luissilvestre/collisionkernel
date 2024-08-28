@@ -32,10 +32,10 @@
 
 
 
-module Subordinate
+module Subordinate2D
 
-export evenY, Cnu, compute_Λb
-export fractional_laplacian
+export evenY, Cnu
+export eigenvals_from_kernel, subordinate_eigenvals
 export pre_sample, sample_subordinate, sample_fractional_laplacian
 
 using SphericalHarmonics
@@ -46,15 +46,16 @@ using SpecialFunctions
 sphericalcoefficients = SphericalHarmonics.compute_coefficients(10000, 0)
 
 function Yl0(θ::Real, index::Integer)
-    return SphericalHarmonics.sphericalharmonic(θ,0.,l=index,m=0,SHType=SphericalHarmonics.RealHarmonics(),coeff=sphericalcoefficients)
+    return cos(index*θ) / sqrt(π)
 end
 
 function evenY(θ::Real, index::Integer)
-    return Yl0(θ,2*index)
+    return cos(2*index*θ) / sqrt(π)
 end
 
+# This is for 2d
 function Cnu(ν::Real)
-    return 2^ν * gamma(ν/2+1) / π / abs(gamma(-ν/2)) / 2
+    return 2^ν * gamma(ν/2+1/2) / π^(1/2) / abs(gamma(-ν/2)) / 2
 end
 
 ######################################################################################
@@ -70,8 +71,8 @@ function eigenvals_from_kernel(b::Function, N::Integer)
     lambda = zeros(N)
     for index in 1:N
         f(θ) = evenY(θ,index)
-        g(θ) = 2π * (f(0)-f(θ)) * b(θ) * sin(θ)
-        Bf = quadgk(g,0,π)[1]
+        g(θ) = 4 * (f(0)-f(θ)) * b(θ)
+        Bf = quadgk(g,0,π/2)[1]
         lambda[index] = Bf / f(0)
     end
     return lambda
@@ -83,7 +84,7 @@ function subordinate_eigenvals(ω::Function, N::Integer)
     lambda = zeros(N)
     verymuch = 20000.
     for index in 1:N
-        λ = 2index*(2index+1)
+        λ = (2index)^2
         g(t) = 1-exp(-t)
         integrand(t) = g(t)*ω(t/λ)/λ
         lambda[index] = quadgk(integrand,0,verymuch)[1]
@@ -95,7 +96,6 @@ end
 # assuming that ω(t) = 1 for t large. It is more accurate than the previous implementation under that assumption
 # it returns a list of eigenvalues corresponding to Y_1, Y_2, ..., Y_N
 # The should be the eigenvalues of (-Δ)^{ν/2} when ω=1.
-
 function g(t::Real;N=10)
     if (t>0.1) return (1-exp(-t))/t end
     sum = 0.
@@ -108,9 +108,10 @@ end
 function subordinate_eigenvals(ω::Function, ν::Real, N::Integer)
     lambda = zeros(N)
     verymuch = 100.
+    #ω1(t,λ) = ω(t/λ)*t^(-1-ν/2)*λ^(ν/2)
 
     for index in 1:N
-        λ = 2index*(2index+1)
+        λ = (2index)^2
         factor = subordinate_factor(ν)
         integrand(t) = g(t)*ω(t/λ)*t^(-ν/2)
         s1 = 1/(1-ν/2)  # it corresponds to t=1.
@@ -125,13 +126,25 @@ function subordinate_eigenvals(ω::Function, ν::Real, N::Integer)
     return lambda
 end
 
+## The following function returns the eigenvalues of the fractional Laplacian
+# We use it for test purposes. It should return approximately the same as subordinate_eigenvals(θ->1, ν, N)
+
+function fractional_laplacian_eigenvals(ν::Real, N::Integer)
+    return [(2index)^ν for index in 1:N]
+end
 
 
 # The following function computes the factor so that factor*t^{-1-ν/2} is the subordinate
 # function for the fractional Laplacian (-Δ)^{ν/2}
+
 function subordinate_factor(ν::Real)
     -gamma(-ν/2)
 end
+
+# The following functions returns the coefficients a so that we reproduce the integro-differential kernel 
+# on S^2 from the subordinate weight t^(-1-2ν) ω(t) / subordinate_factor
+# It should return the coefficients of the fractional Laplacian when ω=1, but the numerical error is quite significant
+# The coefficients correspond to Y_0, Y_1, ..., Y_{N-1}
 
 function subordinate_coefficients(ν::Real, ω::Function, N::Integer)
     factor = subordinate_factor(ν)
@@ -172,18 +185,18 @@ end
 function series_coefficients(f::Function, N::Integer; precision=10000, support=(0,π))
     a = zeros(N)
     for ℓ in 1:N
-        a[ℓ] = simpsons(θ -> 2π*sin(θ)*evenY(θ,ℓ-1)*f(θ),support[1],support[2];N=precision)
+        a[ℓ] = simpsons(θ -> 2*evenY(θ,ℓ-1)*f(θ),support[1],support[2];N=precision)
     end
     return a
 end
 
 function fractional_laplacian(a::Vector{<:Real}, ν::Real)
- N = length(a)
- b = similar(a)
- for ℓ in 1:N
-     b[ℓ] = a[ℓ]*(2(ℓ-1)*(2ℓ-1))^(ν/2)
- end    
- return harmonic_series(0.,b)
+    N = length(a)
+    b = similar(a)
+    for ℓ in 1:N
+        b[ℓ] = a[ℓ]*(2(ℓ-1))^ν
+    end    
+    return harmonic_series(0.,b)
 end
 
 function fourier_multiplier(a::Vector{<:Real}, m::Vector{<:Real})
@@ -229,7 +242,7 @@ function pre_sample(points::Integer; N::Integer=0, gg=0)
         	# This is a legacy condition that should only be executed if the computation is intended to be very fast
         	# and inaccurate.
             f1(θ) = exp(-gg2*(cos(2θ-2θ0)+1))+exp(-gg2*(cos(2θ+2θ0)+1))
-            mass[i] = simpsons(θ -> 4π*f1(θ)*sin(θ),0,π/2)
+            mass[i] = simpsons(θ -> 4*f1(θ),0,π/2)
             a[i,:] = series_coefficients(f1,N,precision=prec2)
         else
         	# This is a function centered at π/2 - θ0 so that
@@ -240,7 +253,7 @@ function pre_sample(points::Integer; N::Integer=0, gg=0)
             supp = sqrt(20/gg2)
             @assert π/2 - θ0 - supp > 0
             @assert π/2 - θ0 + supp < π
-            mass[i] = simpsons(θ -> 4π*f2(θ)*sin(θ),π/2 - θ0-supp,π/2 - θ0+supp)
+            mass[i] = simpsons(θ -> 4*f2(θ),π/2 - θ0-supp,π/2 - θ0+supp)
             prec2 = 400
             a[i,:] = 2*series_coefficients(f2,N,precision=prec2,support=(π/2 - θ0-supp,π/2 - θ0+supp))
         end
@@ -277,27 +290,6 @@ function sample_fractional_laplacian(ν::Vector{<:Real}, a::Matrix{<:Real}, mass
         end
     end
     return res
-end
-
-function Λlocal(ν::Real;dimension=3)
-    return dimension + 3 - 1/(dimension-1)
-end
-
-function compute_cK(ν::Real, ω::Function; dimension=3)
-    Λl = Λlocal(ν,dimension=dimension)
-    factor = Subordinate.subordinate_factor(ν)
-    Cν = 1/(2*factor)
-    return quadgk(t -> Cν*ω(t)*t^(-1-ν/2)*(1-exp(-2Λl *t)),0,Inf)[1]
-end
-
-function compute_cP(ν::Real, ω::Function)
-    factor = Subordinate.subordinate_factor(ν)
-    Cν = 1/(3*factor)
-    return quadgk(t -> Cν*ω(t)*t^(-1-ν/2)*(1-exp(-6 *t)),0,Inf)[1]
-end
-
-function compute_Λb(ν::Real, ω::Function)
-    return 2*compute_cK(ν,ω) / compute_cP(ν,ω)
 end
 
 end
